@@ -73,6 +73,8 @@ This extension does not register its own search provider. It only changes the ac
 
 When routing to `pi-web-access`, the extension enables every managed tool that the installed `pi-web-access` extension registered. If `pi-web-access` is not installed, no replacement tools are enabled.
 
+The status line shows `🔍 web_run` when Codex web search is active, `🔍 pwa` when `pi-web-access` tools are active, and no status when neither route has an active tool.
+
 ## Command
 
 ```text

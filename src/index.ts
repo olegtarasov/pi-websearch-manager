@@ -59,14 +59,15 @@ function activeSubset(activeTools: string[], candidates: readonly string[]): str
   return activeTools.filter((toolName) => candidateSet.has(toolName));
 }
 
-function formatStatus(result: RouteResult): string {
-  const target = result.target === "openai-web-run" ? "OpenAI web_run" : "pi-web-access";
-  const active = result.activePreferredTools.length > 0
-    ? result.activePreferredTools.join(",")
-    : result.preferredTools.length > 0
-      ? `missing ${result.preferredTools.join(",")}`
-      : "no matching tools installed";
-  return `websearch: ${target} (${active})`;
+function formatStatus(result: RouteResult): string | undefined {
+  if (result.activePreferredTools.length === 0) return undefined;
+  if (result.target === "openai-web-run" && result.activePreferredTools.includes("web_run")) {
+    return "🔍 web_run";
+  }
+  if (result.target === "pi-web-access") {
+    return "🔍 pwa";
+  }
+  return undefined;
 }
 
 function notifyStatus(ctx: ExtensionContext, result: RouteResult): void {

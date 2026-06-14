@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/).
 
+## [0.0.4] - 2026-06-14
+
+### Changed
+
+- Shorten the status line to `🔍 web_run` for Codex web search and `🔍 pwa` for `pi-web-access`.
+- Clear the status line when no managed web-search tools are active.
+
 ## [0.0.3] - 2026-06-14
 
 ### Fixed
