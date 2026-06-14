@@ -1,7 +1,7 @@
 {
   "name": "@oleg_tarasov/pi-websearch-manager",
-  "version": "0.0.4",
-  "description": "Pi extension that routes web search tools between OpenAI/Codex web_run and pi-web-access by active model.",
+  "version": "0.1.0",
+  "description": "Pi extension that routes web search tools between OpenAI/Codex web_run and extension-provided web tools by active model.",
   "type": "module",
   "license": "MIT",
   "author": "Oleg Tarasov <me@olegtarasov.email>",
@@ -20,7 +20,8 @@
     "extension",
     "web-search",
     "codex",
-    "pi-web-access"
+    "pi-web-access",
+    "rpiv-web-tools"
   ],
   "files": [
     "src/**/*.ts",

@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/).
 
+## [0.1.0] - 2026-06-14
+
+### Added
+
+- Support `@juicesharp/rpiv-web-tools` by managing its `web_search` and `web_fetch` tools like the existing extension web-search tools.
+
+### Changed
+
+- Generalize non-Codex routing to extension-provided web tools instead of treating `pi-web-access` as the only managed provider.
+- Show `🔍 <extension_name>` for extension web-search mode when the provider can be inferred, falling back to `🔍 ext. search` when it cannot.
+
 ## [0.0.4] - 2026-06-14
 
 ### Changed

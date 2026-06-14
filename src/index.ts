@@ -1,23 +1,25 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, SourceInfo, ToolInfo } from "@earendil-works/pi-coding-agent";
 
 const STATUS_KEY = "pi-websearch-manager";
-const PI_WEB_ACCESS_TOOLS = [
+const EXTENSION_WEB_SEARCH_TOOLS = [
   "web_search",
   "code_search",
   "fetch_content",
   "get_search_content",
+  "web_fetch",
 ] as const;
 const CODEX_WEB_SEARCH_TOOLS = ["web_run"] as const;
 const OPENAI_RESPONSES_PROVIDERS = new Set(["openai-codex", "openai"]);
 
-const PI_WEB_ACCESS_TOOL_SET = new Set<string>(PI_WEB_ACCESS_TOOLS);
+const EXTENSION_WEB_SEARCH_TOOL_SET = new Set<string>(EXTENSION_WEB_SEARCH_TOOLS);
 const CODEX_WEB_SEARCH_TOOL_SET = new Set<string>(CODEX_WEB_SEARCH_TOOLS);
 
-type RouteTarget = "openai-web-run" | "pi-web-access";
+type RouteTarget = "openai-web-run" | "extension-web-search";
 
 interface RouteResult {
   target: RouteTarget;
   modelLabel: string;
+  extensionSearchLabel: string | undefined;
   activeTools: string[];
   removedTools: string[];
   enabledTools: string[];
@@ -45,9 +47,12 @@ function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
 
-function existingTools(pi: ExtensionAPI, names: readonly string[]): string[] {
-  const allToolNames = new Set(pi.getAllTools().map((tool) => tool.name));
-  return names.filter((name) => allToolNames.has(name));
+function existingToolInfos(allTools: ToolInfo[], names: readonly string[]): ToolInfo[] {
+  const toolsByName = new Map(allTools.map((tool) => [tool.name, tool]));
+  return names.flatMap((name) => {
+    const tool = toolsByName.get(name);
+    return tool ? [tool] : [];
+  });
 }
 
 function sameTools(left: string[], right: string[]): boolean {
@@ -59,13 +64,67 @@ function activeSubset(activeTools: string[], candidates: readonly string[]): str
   return activeTools.filter((toolName) => candidateSet.has(toolName));
 }
 
+function activeToolInfos(activeTools: string[], candidates: ToolInfo[]): ToolInfo[] {
+  const activeSet = new Set<string>(activeTools);
+  return candidates.filter((tool) => activeSet.has(tool.name));
+}
+
+function stripNpmVersion(packageName: string): string {
+  if (packageName.startsWith("@")) {
+    const slashIndex = packageName.indexOf("/");
+    if (slashIndex === -1) return packageName;
+    const versionIndex = packageName.indexOf("@", slashIndex + 1);
+    return versionIndex === -1 ? packageName : packageName.slice(0, versionIndex);
+  }
+
+  const versionIndex = packageName.indexOf("@");
+  return versionIndex === -1 ? packageName : packageName.slice(0, versionIndex);
+}
+
+function packageDisplayName(packageName: string): string | undefined {
+  const name = stripNpmVersion(packageName.trim());
+  if (!name) return undefined;
+  const segments = name.split("/").filter(Boolean);
+  return segments[segments.length - 1] || undefined;
+}
+
+function extensionDisplayName(sourceInfo: SourceInfo | undefined): string | undefined {
+  const source = sourceInfo?.source.trim();
+  if (!source) return undefined;
+
+  if (source.startsWith("npm:")) {
+    return packageDisplayName(source.slice("npm:".length));
+  }
+
+  if (source.startsWith("git:")) {
+    const withoutRef = source.slice("git:".length).split("#")[0] ?? "";
+    const withoutGitSuffix = withoutRef.replace(/\.git$/, "");
+    return packageDisplayName(withoutGitSuffix);
+  }
+
+  if (source === "auto" || source === "cli" || source === "local") {
+    return undefined;
+  }
+
+  return source;
+}
+
+function extensionSearchLabel(activePreferredToolInfos: ToolInfo[]): string | undefined {
+  const labels = unique(
+    activePreferredToolInfos
+      .map((tool) => extensionDisplayName(tool.sourceInfo))
+      .filter((label): label is string => Boolean(label)),
+  );
+  return labels.length === 1 ? labels[0] : undefined;
+}
+
 function formatStatus(result: RouteResult): string | undefined {
   if (result.activePreferredTools.length === 0) return undefined;
   if (result.target === "openai-web-run" && result.activePreferredTools.includes("web_run")) {
     return "🔍 web_run";
   }
-  if (result.target === "pi-web-access") {
-    return "🔍 pwa";
+  if (result.target === "extension-web-search") {
+    return `🔍 ${result.extensionSearchLabel ?? "ext. search"}`;
   }
   return undefined;
 }
@@ -79,21 +138,23 @@ export default function piWebsearchManager(pi: ExtensionAPI): void {
   let deferredRouteGeneration = 0;
 
   function routeTools(ctx: ExtensionContext): RouteResult {
-    const codexWebSearchTools = existingTools(pi, CODEX_WEB_SEARCH_TOOLS);
+    const allTools = pi.getAllTools();
+    const codexWebSearchTools = existingToolInfos(allTools, CODEX_WEB_SEARCH_TOOLS).map((tool) => tool.name);
     const openaiRoute = isOpenAIResponsesModel(ctx) && codexWebSearchTools.length > 0;
-    const target: RouteTarget = openaiRoute ? "openai-web-run" : "pi-web-access";
+    const target: RouteTarget = openaiRoute ? "openai-web-run" : "extension-web-search";
     const activeTools = pi.getActiveTools();
+    const extensionWebSearchToolInfos = existingToolInfos(allTools, EXTENSION_WEB_SEARCH_TOOLS);
     const preferredTools = openaiRoute
       ? codexWebSearchTools
-      : existingTools(pi, PI_WEB_ACCESS_TOOLS);
+      : extensionWebSearchToolInfos.map((tool) => tool.name);
 
     let nextTools = [...activeTools];
     let removedTools: string[] = [];
     const enabledTools: string[] = [];
 
     if (openaiRoute) {
-      nextTools = nextTools.filter((toolName) => !PI_WEB_ACCESS_TOOL_SET.has(toolName));
-      removedTools = activeTools.filter((toolName) => PI_WEB_ACCESS_TOOL_SET.has(toolName));
+      nextTools = nextTools.filter((toolName) => !EXTENSION_WEB_SEARCH_TOOL_SET.has(toolName));
+      removedTools = activeTools.filter((toolName) => EXTENSION_WEB_SEARCH_TOOL_SET.has(toolName));
     } else {
       nextTools = nextTools.filter((toolName) => !CODEX_WEB_SEARCH_TOOL_SET.has(toolName));
       removedTools = activeTools.filter((toolName) => CODEX_WEB_SEARCH_TOOL_SET.has(toolName));
@@ -111,9 +172,13 @@ export default function piWebsearchManager(pi: ExtensionAPI): void {
     }
 
     const activePreferredTools = activeSubset(nextTools, preferredTools);
+    const extensionSearchActiveToolInfos = target === "extension-web-search"
+      ? activeToolInfos(activePreferredTools, extensionWebSearchToolInfos)
+      : [];
     const result: RouteResult = {
       target,
       modelLabel: modelLabel(ctx),
+      extensionSearchLabel: extensionSearchLabel(extensionSearchActiveToolInfos),
       activeTools: nextTools,
       removedTools,
       enabledTools,
@@ -157,8 +222,11 @@ export default function piWebsearchManager(pi: ExtensionAPI): void {
       const active = result.activePreferredTools.length > 0
         ? result.activePreferredTools.join(", ")
         : "none";
+      const extensionSource = result.target === "extension-web-search" && result.extensionSearchLabel
+        ? ` (${result.extensionSearchLabel})`
+        : "";
       ctx.ui.notify(
-        `Web search route for ${result.modelLabel}: ${result.target}; active preferred tools: ${active}${removed}${enabled}`,
+        `Web search route for ${result.modelLabel}: ${result.target}${extensionSource}; active preferred tools: ${active}${removed}${enabled}`,
         "info",
       );
     },

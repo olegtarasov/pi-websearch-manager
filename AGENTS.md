@@ -5,7 +5,7 @@
 This repository contains a Pi extension package that routes active web-search tools between:
 
 - `pi-codex-conversion` / `web_run` for OpenAI Responses and OpenAI Codex models.
-- `pi-web-access` / `web_search` and `code_search` for non-OpenAI models.
+- Extension-provided web tools from `pi-web-access` or `@juicesharp/rpiv-web-tools` for non-OpenAI models.
 
 Do not add a new web-search implementation here unless explicitly requested. This package should stay a lightweight active-tool router.
 
