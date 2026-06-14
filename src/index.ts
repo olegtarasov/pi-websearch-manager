@@ -1,8 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const STATUS_KEY = "pi-websearch-manager";
-const PI_WEB_ACCESS_SEARCH_TOOLS = ["web_search", "code_search"] as const;
-const PI_WEB_ACCESS_OPENAI_HIDDEN_TOOLS = [
+const PI_WEB_ACCESS_TOOLS = [
   "web_search",
   "code_search",
   "fetch_content",
@@ -11,7 +10,7 @@ const PI_WEB_ACCESS_OPENAI_HIDDEN_TOOLS = [
 const CODEX_WEB_SEARCH_TOOLS = ["web_run"] as const;
 const OPENAI_RESPONSES_PROVIDERS = new Set(["openai-codex", "openai"]);
 
-const PI_WEB_ACCESS_OPENAI_HIDDEN_TOOL_SET = new Set<string>(PI_WEB_ACCESS_OPENAI_HIDDEN_TOOLS);
+const PI_WEB_ACCESS_TOOL_SET = new Set<string>(PI_WEB_ACCESS_TOOLS);
 const CODEX_WEB_SEARCH_TOOL_SET = new Set<string>(CODEX_WEB_SEARCH_TOOLS);
 
 type RouteTarget = "openai-web-run" | "pi-web-access";
@@ -21,7 +20,7 @@ interface RouteResult {
   modelLabel: string;
   activeTools: string[];
   removedTools: string[];
-  restoredTools: string[];
+  enabledTools: string[];
   preferredTools: string[];
   activePreferredTools: string[];
 }
@@ -64,7 +63,9 @@ function formatStatus(result: RouteResult): string {
   const target = result.target === "openai-web-run" ? "OpenAI web_run" : "pi-web-access";
   const active = result.activePreferredTools.length > 0
     ? result.activePreferredTools.join(",")
-    : `missing ${result.preferredTools.join(",") || "preferred tools"}`;
+    : result.preferredTools.length > 0
+      ? `missing ${result.preferredTools.join(",")}`
+      : "no matching tools installed";
   return `websearch: ${target} (${active})`;
 }
 
@@ -74,39 +75,33 @@ function notifyStatus(ctx: ExtensionContext, result: RouteResult): void {
 }
 
 export default function piWebsearchManager(pi: ExtensionAPI): void {
-  let lastActivePiWebAccessTools: string[] = [];
   let deferredRouteGeneration = 0;
 
   function routeTools(ctx: ExtensionContext): RouteResult {
-    const openaiRoute = isOpenAIResponsesModel(ctx);
+    const codexWebSearchTools = existingTools(pi, CODEX_WEB_SEARCH_TOOLS);
+    const openaiRoute = isOpenAIResponsesModel(ctx) && codexWebSearchTools.length > 0;
     const target: RouteTarget = openaiRoute ? "openai-web-run" : "pi-web-access";
     const activeTools = pi.getActiveTools();
     const preferredTools = openaiRoute
-      ? existingTools(pi, CODEX_WEB_SEARCH_TOOLS)
-      : existingTools(pi, PI_WEB_ACCESS_SEARCH_TOOLS);
+      ? codexWebSearchTools
+      : existingTools(pi, PI_WEB_ACCESS_TOOLS);
 
     let nextTools = [...activeTools];
     let removedTools: string[] = [];
-    const restoredTools: string[] = [];
+    const enabledTools: string[] = [];
 
     if (openaiRoute) {
-      const activePiWebAccessTools = activeSubset(activeTools, PI_WEB_ACCESS_OPENAI_HIDDEN_TOOLS);
-      if (activePiWebAccessTools.length > 0) {
-        lastActivePiWebAccessTools = activePiWebAccessTools;
-      }
-
-      nextTools = nextTools.filter((toolName) => !PI_WEB_ACCESS_OPENAI_HIDDEN_TOOL_SET.has(toolName));
-      removedTools = activeTools.filter((toolName) => PI_WEB_ACCESS_OPENAI_HIDDEN_TOOL_SET.has(toolName));
+      nextTools = nextTools.filter((toolName) => !PI_WEB_ACCESS_TOOL_SET.has(toolName));
+      removedTools = activeTools.filter((toolName) => PI_WEB_ACCESS_TOOL_SET.has(toolName));
     } else {
       nextTools = nextTools.filter((toolName) => !CODEX_WEB_SEARCH_TOOL_SET.has(toolName));
       removedTools = activeTools.filter((toolName) => CODEX_WEB_SEARCH_TOOL_SET.has(toolName));
+    }
 
-      const availablePiWebAccessTools = new Set(existingTools(pi, PI_WEB_ACCESS_OPENAI_HIDDEN_TOOLS));
-      for (const toolName of lastActivePiWebAccessTools) {
-        if (!availablePiWebAccessTools.has(toolName) || nextTools.includes(toolName)) continue;
-        nextTools.push(toolName);
-        restoredTools.push(toolName);
-      }
+    for (const toolName of preferredTools) {
+      if (nextTools.includes(toolName)) continue;
+      nextTools.push(toolName);
+      enabledTools.push(toolName);
     }
 
     nextTools = unique(nextTools);
@@ -120,7 +115,7 @@ export default function piWebsearchManager(pi: ExtensionAPI): void {
       modelLabel: modelLabel(ctx),
       activeTools: nextTools,
       removedTools,
-      restoredTools,
+      enabledTools,
       preferredTools,
       activePreferredTools,
     };
@@ -157,12 +152,12 @@ export default function piWebsearchManager(pi: ExtensionAPI): void {
     handler: async (_args, ctx) => {
       const result = routeTools(ctx);
       const removed = result.removedTools.length > 0 ? `; removed ${result.removedTools.join(", ")}` : "";
-      const restored = result.restoredTools.length > 0 ? `; restored ${result.restoredTools.join(", ")}` : "";
+      const enabled = result.enabledTools.length > 0 ? `; enabled ${result.enabledTools.join(", ")}` : "";
       const active = result.activePreferredTools.length > 0
         ? result.activePreferredTools.join(", ")
         : "none";
       ctx.ui.notify(
-        `Web search route for ${result.modelLabel}: ${result.target}; active preferred tools: ${active}${removed}${restored}`,
+        `Web search route for ${result.modelLabel}: ${result.target}; active preferred tools: ${active}${removed}${enabled}`,
         "info",
       );
     },

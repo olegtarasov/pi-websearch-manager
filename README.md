@@ -4,8 +4,8 @@ A small [Pi](https://pi.dev/) extension that keeps web-search tools from `pi-cod
 
 It routes by the active model:
 
-- **OpenAI Responses / OpenAI Codex models**: prefer `web_run` from `pi-codex-conversion` and hide `pi-web-access` tools (`web_search`, `code_search`, `fetch_content`, `get_search_content`).
-- **Other models**: hide `web_run` and restore the previously active `pi-web-access` tools.
+- **OpenAI Responses / OpenAI Codex models with `web_run` registered**: enable `web_run` from `pi-codex-conversion` and hide all managed `pi-web-access` tools (`web_search`, `code_search`, `fetch_content`, `get_search_content`).
+- **Other models, or OpenAI models without registered `web_run`**: hide `web_run` and enable all registered `pi-web-access` tools.
 
 ## Install
 
@@ -67,11 +67,11 @@ This extension does not register its own search provider. It only changes the ac
 
 | Active model | Active search preference | Hidden tools |
 | --- | --- | --- |
-| `openai-codex/*` Responses models | `web_run` | `web_search`, `code_search`, `fetch_content`, `get_search_content` |
-| `openai/*` Responses models | `web_run` if provided by `pi-codex-conversion` | `web_search`, `code_search`, `fetch_content`, `get_search_content` |
-| Non-OpenAI models | `web_search`, `code_search` from `pi-web-access` | `web_run` |
+| OpenAI Responses model with registered `web_run` | `web_run` | `web_search`, `code_search`, `fetch_content`, `get_search_content` |
+| OpenAI Responses model without registered `web_run` | Registered `pi-web-access` tools | `web_run` |
+| Non-OpenAI models | Registered `pi-web-access` tools | `web_run` |
 
-The extension remembers which managed `pi-web-access` tools were active before hiding them, then restores only those tools when you switch away from OpenAI. It does not force-enable tools that were not previously active.
+When routing to `pi-web-access`, the extension enables every managed tool that the installed `pi-web-access` extension registered. If `pi-web-access` is not installed, no replacement tools are enabled.
 
 ## Command
 
