@@ -1,0 +1,52 @@
+{
+  "name": "@oleg_tarasov/pi-websearch-manager",
+  "version": "0.0.1",
+  "description": "Pi extension that routes web search tools between OpenAI/Codex web_run and pi-web-access by active model.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Oleg Tarasov <me@olegtarasov.email>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/olegtarasov/pi-websearch-manager.git"
+  },
+  "bugs": {
+    "url": "https://github.com/olegtarasov/pi-websearch-manager/issues"
+  },
+  "homepage": "https://github.com/olegtarasov/pi-websearch-manager#readme",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "extension",
+    "web-search",
+    "codex",
+    "pi-web-access"
+  ],
+  "files": [
+    "src/**/*.ts",
+    "README.md",
+    "AGENTS.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck",
+    "pack:dry-run": "npm pack --dry-run"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.79.3",
+    "typescript": "^5.9.3"
+  }
+}
