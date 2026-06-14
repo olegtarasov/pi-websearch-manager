@@ -2,10 +2,16 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 const STATUS_KEY = "pi-websearch-manager";
 const PI_WEB_ACCESS_SEARCH_TOOLS = ["web_search", "code_search"] as const;
+const PI_WEB_ACCESS_OPENAI_HIDDEN_TOOLS = [
+  "web_search",
+  "code_search",
+  "fetch_content",
+  "get_search_content",
+] as const;
 const CODEX_WEB_SEARCH_TOOLS = ["web_run"] as const;
 const OPENAI_RESPONSES_PROVIDERS = new Set(["openai-codex", "openai"]);
 
-const PI_WEB_ACCESS_SEARCH_TOOL_SET = new Set<string>(PI_WEB_ACCESS_SEARCH_TOOLS);
+const PI_WEB_ACCESS_OPENAI_HIDDEN_TOOL_SET = new Set<string>(PI_WEB_ACCESS_OPENAI_HIDDEN_TOOLS);
 const CODEX_WEB_SEARCH_TOOL_SET = new Set<string>(CODEX_WEB_SEARCH_TOOLS);
 
 type RouteTarget = "openai-web-run" | "pi-web-access";
@@ -68,7 +74,7 @@ function notifyStatus(ctx: ExtensionContext, result: RouteResult): void {
 }
 
 export default function piWebsearchManager(pi: ExtensionAPI): void {
-  let lastActivePiWebAccessSearchTools: string[] = [];
+  let lastActivePiWebAccessTools: string[] = [];
   let deferredRouteGeneration = 0;
 
   function routeTools(ctx: ExtensionContext): RouteResult {
@@ -84,19 +90,19 @@ export default function piWebsearchManager(pi: ExtensionAPI): void {
     const restoredTools: string[] = [];
 
     if (openaiRoute) {
-      const activePiWebAccessTools = activeSubset(activeTools, PI_WEB_ACCESS_SEARCH_TOOLS);
+      const activePiWebAccessTools = activeSubset(activeTools, PI_WEB_ACCESS_OPENAI_HIDDEN_TOOLS);
       if (activePiWebAccessTools.length > 0) {
-        lastActivePiWebAccessSearchTools = activePiWebAccessTools;
+        lastActivePiWebAccessTools = activePiWebAccessTools;
       }
 
-      nextTools = nextTools.filter((toolName) => !PI_WEB_ACCESS_SEARCH_TOOL_SET.has(toolName));
-      removedTools = activeTools.filter((toolName) => PI_WEB_ACCESS_SEARCH_TOOL_SET.has(toolName));
+      nextTools = nextTools.filter((toolName) => !PI_WEB_ACCESS_OPENAI_HIDDEN_TOOL_SET.has(toolName));
+      removedTools = activeTools.filter((toolName) => PI_WEB_ACCESS_OPENAI_HIDDEN_TOOL_SET.has(toolName));
     } else {
       nextTools = nextTools.filter((toolName) => !CODEX_WEB_SEARCH_TOOL_SET.has(toolName));
       removedTools = activeTools.filter((toolName) => CODEX_WEB_SEARCH_TOOL_SET.has(toolName));
 
-      const availablePiWebAccessTools = new Set(existingTools(pi, PI_WEB_ACCESS_SEARCH_TOOLS));
-      for (const toolName of lastActivePiWebAccessSearchTools) {
+      const availablePiWebAccessTools = new Set(existingTools(pi, PI_WEB_ACCESS_OPENAI_HIDDEN_TOOLS));
+      for (const toolName of lastActivePiWebAccessTools) {
         if (!availablePiWebAccessTools.has(toolName) || nextTools.includes(toolName)) continue;
         nextTools.push(toolName);
         restoredTools.push(toolName);

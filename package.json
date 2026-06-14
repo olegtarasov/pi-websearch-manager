@@ -1,6 +1,6 @@
 {
   "name": "@oleg_tarasov/pi-websearch-manager",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Pi extension that routes web search tools between OpenAI/Codex web_run and pi-web-access by active model.",
   "type": "module",
   "license": "MIT",

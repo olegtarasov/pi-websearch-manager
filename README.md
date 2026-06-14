@@ -4,10 +4,8 @@ A small [Pi](https://pi.dev/) extension that keeps web-search tools from `pi-cod
 
 It routes by the active model:
 
-- **OpenAI Responses / OpenAI Codex models**: prefer `web_run` from `pi-codex-conversion` and hide duplicate `pi-web-access` search tools (`web_search`, `code_search`).
-- **Other models**: hide `web_run` and restore the previously active `pi-web-access` search tools.
-
-`fetch_content` and `get_search_content` stay available on OpenAI models because they provide URL, GitHub, PDF, YouTube, and video extraction that is broader than ordinary web search.
+- **OpenAI Responses / OpenAI Codex models**: prefer `web_run` from `pi-codex-conversion` and hide `pi-web-access` tools (`web_search`, `code_search`, `fetch_content`, `get_search_content`).
+- **Other models**: hide `web_run` and restore the previously active `pi-web-access` tools.
 
 ## Install
 
@@ -67,13 +65,13 @@ If you use OpenAI via the regular `openai` provider instead of `openai-codex`, c
 
 This extension does not register its own search provider. It only changes the active tool list.
 
-| Active model | Active search preference | Hidden duplicate tools |
+| Active model | Active search preference | Hidden tools |
 | --- | --- | --- |
-| `openai-codex/*` Responses models | `web_run` | `web_search`, `code_search` |
-| `openai/*` Responses models | `web_run` if provided by `pi-codex-conversion` | `web_search`, `code_search` |
+| `openai-codex/*` Responses models | `web_run` | `web_search`, `code_search`, `fetch_content`, `get_search_content` |
+| `openai/*` Responses models | `web_run` if provided by `pi-codex-conversion` | `web_search`, `code_search`, `fetch_content`, `get_search_content` |
 | Non-OpenAI models | `web_search`, `code_search` from `pi-web-access` | `web_run` |
 
-The extension remembers which `pi-web-access` search tools were active before hiding them, then restores only those tools when you switch away from OpenAI. It does not force-enable tools that were not previously active.
+The extension remembers which managed `pi-web-access` tools were active before hiding them, then restores only those tools when you switch away from OpenAI. It does not force-enable tools that were not previously active.
 
 ## Command
 
