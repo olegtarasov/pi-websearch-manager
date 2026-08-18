@@ -1,34 +1,29 @@
 import type { ExtensionAPI, ExtensionContext, SourceInfo, ToolInfo } from "@earendil-works/pi-coding-agent";
 
 const STATUS_KEY = "pi-websearch-manager";
-const EXTENSION_WEB_SEARCH_TOOLS = [
-  "web_search",
-  "code_search",
-  "fetch_content",
-  "get_search_content",
-  "web_fetch",
-] as const;
-const CODEX_WEB_SEARCH_TOOLS = ["web_run"] as const;
-const OPENAI_RESPONSES_PROVIDERS = new Set(["openai-codex", "openai"]);
+const CODEX_WEB_SEARCH_TOOL_NAME = "web_run";
+const CODEX_EXEC_TOOL_NAME = "exec";
 
-const EXTENSION_WEB_SEARCH_TOOL_SET = new Set<string>(EXTENSION_WEB_SEARCH_TOOLS);
-const CODEX_WEB_SEARCH_TOOL_SET = new Set<string>(CODEX_WEB_SEARCH_TOOLS);
+const PACKAGE_NAMES = {
+  codex: "@howaboua/pi-codex-conversion",
+  piWebAccess: "pi-web-access",
+  rpivWebTools: "@juicesharp/rpiv-web-tools",
+} as const;
 
-type RouteTarget = "openai-web-run" | "extension-web-search";
+type ManagedProvider = keyof typeof PACKAGE_NAMES;
+type RouteTarget = "codex-web-run" | "codex-nested-web-run" | "extension-web-search";
 
 interface RouteResult {
   target: RouteTarget;
   modelLabel: string;
   extensionSearchLabel: string | undefined;
-  activeTools: string[];
   removedTools: string[];
   enabledTools: string[];
-  preferredTools: string[];
   activePreferredTools: string[];
 }
 
-function normalize(value: string | undefined): string {
-  return value?.trim().toLowerCase() ?? "";
+interface RouteOptions {
+  activatePreferredTools: boolean;
 }
 
 function modelLabel(ctx: ExtensionContext): string {
@@ -37,22 +32,8 @@ function modelLabel(ctx: ExtensionContext): string {
   return `${provider}/${id}`;
 }
 
-function isOpenAIResponsesModel(ctx: ExtensionContext): boolean {
-  const provider = normalize(ctx.model?.provider);
-  const api = normalize(ctx.model?.api);
-  return OPENAI_RESPONSES_PROVIDERS.has(provider) && api.includes("responses");
-}
-
 function unique(values: string[]): string[] {
   return [...new Set(values)];
-}
-
-function existingToolInfos(allTools: ToolInfo[], names: readonly string[]): ToolInfo[] {
-  const toolsByName = new Map(allTools.map((tool) => [tool.name, tool]));
-  return names.flatMap((name) => {
-    const tool = toolsByName.get(name);
-    return tool ? [tool] : [];
-  });
 }
 
 function sameTools(left: string[], right: string[]): boolean {
@@ -60,13 +41,8 @@ function sameTools(left: string[], right: string[]): boolean {
 }
 
 function activeSubset(activeTools: string[], candidates: readonly string[]): string[] {
-  const candidateSet = new Set<string>(candidates);
+  const candidateSet = new Set(candidates);
   return activeTools.filter((toolName) => candidateSet.has(toolName));
-}
-
-function activeToolInfos(activeTools: string[], candidates: ToolInfo[]): ToolInfo[] {
-  const activeSet = new Set<string>(activeTools);
-  return candidates.filter((tool) => activeSet.has(tool.name));
 }
 
 function stripNpmVersion(packageName: string): string {
@@ -81,49 +57,74 @@ function stripNpmVersion(packageName: string): string {
   return versionIndex === -1 ? packageName : packageName.slice(0, versionIndex);
 }
 
-function packageDisplayName(packageName: string): string | undefined {
-  const name = stripNpmVersion(packageName.trim());
-  if (!name) return undefined;
-  const segments = name.split("/").filter(Boolean);
-  return segments[segments.length - 1] || undefined;
+function npmPackageName(source: string): string | undefined {
+  if (!source.startsWith("npm:")) return undefined;
+  const name = stripNpmVersion(source.slice("npm:".length).trim());
+  return name || undefined;
 }
 
-function extensionDisplayName(sourceInfo: SourceInfo | undefined): string | undefined {
-  const source = sourceInfo?.source.trim();
-  if (!source) return undefined;
-
-  if (source.startsWith("npm:")) {
-    return packageDisplayName(source.slice("npm:".length));
-  }
-
-  if (source.startsWith("git:")) {
-    const withoutRef = source.slice("git:".length).split("#")[0] ?? "";
-    const withoutGitSuffix = withoutRef.replace(/\.git$/, "");
-    return packageDisplayName(withoutGitSuffix);
-  }
-
-  if (source === "auto" || source === "cli" || source === "local") {
-    return undefined;
-  }
-
-  return source;
+function provenanceSegments(sourceInfo: SourceInfo): string[] {
+  return [sourceInfo.source, sourceInfo.path, sourceInfo.baseDir]
+    .filter((value): value is string => Boolean(value))
+    .join("/")
+    .replaceAll("\\", "/")
+    .toLowerCase()
+    .split(/[\/#?]/)
+    .map((segment) => segment.replace(/\.git$/, ""));
 }
 
-function extensionSearchLabel(activePreferredToolInfos: ToolInfo[]): string | undefined {
-  const labels = unique(
-    activePreferredToolInfos
-      .map((tool) => extensionDisplayName(tool.sourceInfo))
-      .filter((label): label is string => Boolean(label)),
+function hasPackageDirectory(sourceInfo: SourceInfo, packageName: string): boolean {
+  const directoryName = packageName.split("/").at(-1);
+  return Boolean(directoryName && provenanceSegments(sourceInfo).includes(directoryName));
+}
+
+function providerFromSource(sourceInfo: SourceInfo): ManagedProvider | undefined {
+  const packageName = npmPackageName(sourceInfo.source);
+  if (packageName === PACKAGE_NAMES.codex) return "codex";
+  if (packageName === PACKAGE_NAMES.piWebAccess) return "piWebAccess";
+  if (packageName === PACKAGE_NAMES.rpivWebTools) return "rpivWebTools";
+
+  if (hasPackageDirectory(sourceInfo, PACKAGE_NAMES.codex)) return "codex";
+  if (hasPackageDirectory(sourceInfo, PACKAGE_NAMES.piWebAccess)) return "piWebAccess";
+  if (hasPackageDirectory(sourceInfo, PACKAGE_NAMES.rpivWebTools)) return "rpivWebTools";
+  return undefined;
+}
+
+function providerDisplayName(provider: ManagedProvider): string {
+  if (provider === "piWebAccess") return PACKAGE_NAMES.piWebAccess;
+  if (provider === "rpivWebTools") return "rpiv-web-tools";
+  return "pi-codex-conversion";
+}
+
+function toolProvider(tool: ToolInfo): ManagedProvider | undefined {
+  return providerFromSource(tool.sourceInfo);
+}
+
+function isCodexTool(tool: ToolInfo): boolean {
+  return toolProvider(tool) === "codex";
+}
+
+function isExtensionWebSearchTool(tool: ToolInfo): boolean {
+  const provider = toolProvider(tool);
+  return provider === "piWebAccess" || provider === "rpivWebTools";
+}
+
+function extensionSearchLabel(activeToolInfos: ToolInfo[]): string | undefined {
+  const providers = unique(
+    activeToolInfos
+      .map(toolProvider)
+      .filter((provider): provider is ManagedProvider => provider === "piWebAccess" || provider === "rpivWebTools")
+      .map(providerDisplayName),
   );
-  return labels.length === 1 ? labels[0] : undefined;
+  return providers.length === 1 ? providers[0] : undefined;
 }
 
 function formatStatus(result: RouteResult): string | undefined {
-  if (result.activePreferredTools.length === 0) return undefined;
-  if (result.target === "openai-web-run" && result.activePreferredTools.includes("web_run")) {
+  if (result.target === "codex-nested-web-run") return "🔍 web__run";
+  if (result.target === "codex-web-run" && result.activePreferredTools.includes(CODEX_WEB_SEARCH_TOOL_NAME)) {
     return "🔍 web_run";
   }
-  if (result.target === "extension-web-search") {
+  if (result.target === "extension-web-search" && result.activePreferredTools.length > 0) {
     return `🔍 ${result.extensionSearchLabel ?? "ext. search"}`;
   }
   return undefined;
@@ -137,52 +138,67 @@ function notifyStatus(ctx: ExtensionContext, result: RouteResult): void {
 export default function piWebsearchManager(pi: ExtensionAPI): void {
   let deferredRouteGeneration = 0;
 
-  function routeTools(ctx: ExtensionContext): RouteResult {
+  function routeTools(ctx: ExtensionContext, options: RouteOptions): RouteResult {
     const allTools = pi.getAllTools();
-    const codexWebSearchTools = existingToolInfos(allTools, CODEX_WEB_SEARCH_TOOLS).map((tool) => tool.name);
-    const openaiRoute = isOpenAIResponsesModel(ctx) && codexWebSearchTools.length > 0;
-    const target: RouteTarget = openaiRoute ? "openai-web-run" : "extension-web-search";
     const activeTools = pi.getActiveTools();
-    const extensionWebSearchToolInfos = existingToolInfos(allTools, EXTENSION_WEB_SEARCH_TOOLS);
-    const preferredTools = openaiRoute
-      ? codexWebSearchTools
-      : extensionWebSearchToolInfos.map((tool) => tool.name);
+    const activeToolSet = new Set(activeTools);
+    const codexWebSearchTool = allTools.find(
+      (tool) => tool.name === CODEX_WEB_SEARCH_TOOL_NAME && isCodexTool(tool),
+    );
+    const codexCodeModeActive = allTools.some(
+      (tool) => isCodexTool(tool) && tool.name === CODEX_EXEC_TOOL_NAME && activeToolSet.has(tool.name),
+    );
+    const extensionWebSearchToolInfos = allTools.filter(isExtensionWebSearchTool);
+    const extensionWebSearchTools = extensionWebSearchToolInfos.map((tool) => tool.name);
 
-    let nextTools = [...activeTools];
-    let removedTools: string[] = [];
+    let target: RouteTarget;
+    if (codexWebSearchTool && codexCodeModeActive) {
+      target = "codex-nested-web-run";
+    } else if (codexWebSearchTool && activeToolSet.has(codexWebSearchTool.name)) {
+      target = "codex-web-run";
+    } else {
+      target = "extension-web-search";
+    }
+
+    const preferredTools = target === "codex-web-run"
+      ? [CODEX_WEB_SEARCH_TOOL_NAME]
+      : target === "extension-web-search"
+        ? extensionWebSearchTools
+        : [];
+    const toolsToRemove = target === "extension-web-search"
+      ? new Set(codexWebSearchTool ? [codexWebSearchTool.name] : [])
+      : new Set([
+          ...extensionWebSearchTools,
+          ...(target === "codex-nested-web-run" && codexWebSearchTool ? [codexWebSearchTool.name] : []),
+        ]);
+    const removedTools = activeTools.filter((toolName) => toolsToRemove.has(toolName));
+    const nextTools = activeTools.filter((toolName) => !toolsToRemove.has(toolName));
     const enabledTools: string[] = [];
 
-    if (openaiRoute) {
-      nextTools = nextTools.filter((toolName) => !EXTENSION_WEB_SEARCH_TOOL_SET.has(toolName));
-      removedTools = activeTools.filter((toolName) => EXTENSION_WEB_SEARCH_TOOL_SET.has(toolName));
-    } else {
-      nextTools = nextTools.filter((toolName) => !CODEX_WEB_SEARCH_TOOL_SET.has(toolName));
-      removedTools = activeTools.filter((toolName) => CODEX_WEB_SEARCH_TOOL_SET.has(toolName));
+    if (options.activatePreferredTools) {
+      for (const toolName of preferredTools) {
+        if (nextTools.includes(toolName)) continue;
+        nextTools.push(toolName);
+        enabledTools.push(toolName);
+      }
     }
 
-    for (const toolName of preferredTools) {
-      if (nextTools.includes(toolName)) continue;
-      nextTools.push(toolName);
-      enabledTools.push(toolName);
+    const uniqueNextTools = unique(nextTools);
+    if (!sameTools(activeTools, uniqueNextTools)) {
+      pi.setActiveTools(uniqueNextTools);
     }
 
-    nextTools = unique(nextTools);
-    if (!sameTools(activeTools, nextTools)) {
-      pi.setActiveTools(nextTools);
-    }
-
-    const activePreferredTools = activeSubset(nextTools, preferredTools);
-    const extensionSearchActiveToolInfos = target === "extension-web-search"
-      ? activeToolInfos(activePreferredTools, extensionWebSearchToolInfos)
+    const activePreferredTools = activeSubset(uniqueNextTools, preferredTools);
+    const activePreferredSet = new Set(activePreferredTools);
+    const activeExtensionToolInfos = target === "extension-web-search"
+      ? extensionWebSearchToolInfos.filter((tool) => activePreferredSet.has(tool.name))
       : [];
     const result: RouteResult = {
       target,
       modelLabel: modelLabel(ctx),
-      extensionSearchLabel: extensionSearchLabel(extensionSearchActiveToolInfos),
-      activeTools: nextTools,
+      extensionSearchLabel: extensionSearchLabel(activeExtensionToolInfos),
       removedTools,
       enabledTools,
-      preferredTools,
       activePreferredTools,
     };
     notifyStatus(ctx, result);
@@ -193,35 +209,37 @@ export default function piWebsearchManager(pi: ExtensionAPI): void {
     const generation = ++deferredRouteGeneration;
     setTimeout(() => {
       if (generation !== deferredRouteGeneration) return;
-      routeTools(ctx);
+      routeTools(ctx, { activatePreferredTools: true });
     }, 0);
   }
 
   pi.on("session_start", async (_event, ctx) => {
-    routeTools(ctx);
+    routeTools(ctx, { activatePreferredTools: true });
     scheduleRoute(ctx);
   });
 
   pi.on("model_select", async (_event, ctx) => {
-    routeTools(ctx);
+    routeTools(ctx, { activatePreferredTools: true });
     scheduleRoute(ctx);
   });
 
-  // Last-chance guard for sessions where another extension or a manual /tools
-  // change reintroduced duplicate search tools after the model was selected.
+  // Remove conflicts just before a turn, but preserve an explicit /tools choice
+  // that disabled every managed search tool after the last model selection.
   pi.on("before_agent_start", async (_event, ctx) => {
-    routeTools(ctx);
+    routeTools(ctx, { activatePreferredTools: false });
   });
 
   pi.registerCommand("websearch-manager", {
-    description: "Show and reapply model-aware web search tool routing",
+    description: "Show and reapply active-plan web search tool routing",
     handler: async (_args, ctx) => {
-      const result = routeTools(ctx);
+      const result = routeTools(ctx, { activatePreferredTools: true });
       const removed = result.removedTools.length > 0 ? `; removed ${result.removedTools.join(", ")}` : "";
       const enabled = result.enabledTools.length > 0 ? `; enabled ${result.enabledTools.join(", ")}` : "";
-      const active = result.activePreferredTools.length > 0
-        ? result.activePreferredTools.join(", ")
-        : "none";
+      const active = result.target === "codex-nested-web-run"
+        ? "web__run (nested in exec)"
+        : result.activePreferredTools.length > 0
+          ? result.activePreferredTools.join(", ")
+          : "none";
       const extensionSource = result.target === "extension-web-search" && result.extensionSearchLabel
         ? ` (${result.extensionSearchLabel})`
         : "";
