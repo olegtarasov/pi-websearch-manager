@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-09-11
+
+### Added
+
+- Support the standalone `@howaboua/pi-codex-web-run` package introduced by current `pi-codex-conversion` releases, including its top-level `web_run` provenance and nested `web__run` Code/Notebook integration.
+- Add round-trip model-switch regressions for on-premises models, direct Codex models, configured provider aliases, structured mode, Code mode, missing Codex search, and legacy bundled `web_run`.
+
+### Changed
+
+- Distinguish the standalone Codex search capability from the active Codex adapter plan, because standalone `web_run` can remain registered while chatting with unrelated providers.
+- Detect current structured Codex plans from conversion-owned `exec_command` and `write_stdin` tools, while retaining `exec` detection for Code and Notebook modes.
+- Remove timer-based deferred activation and require the documented manager-last package order, matching Pi's sequential lifecycle handler contract without risking a delayed override of `/tools` choices.
+- Require Pi 0.84.4 or newer and validate development against Pi 0.85.1, `pi-codex-conversion` 3.0.33, `pi-codex-web-run` 0.0.2, `@juicesharp/rpiv-web-tools` 2.9.0, and `pi-web-access` 0.29.0.
+- Update installation and configuration documentation for the split Codex packages and remove the obsolete `tools.webRun` setting.
+
+### Fixed
+
+- Switch from extension-provider search to Codex search when moving from an on-premises model to current Codex Code, Notebook, or structured modes.
+- Stop treating an always-registered standalone `web_run` as proof that a non-Codex model should use the Codex route.
+- Clear the manager status during session shutdown.
+
 ## [0.2.0] - 2026-08-18
 
 ### Added

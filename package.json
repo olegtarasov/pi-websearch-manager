@@ -1,6 +1,6 @@
 {
   "name": "@oleg_tarasov/pi-websearch-manager",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Pi extension that routes web search tools between Codex web_run plans and extension-provided web tools.",
   "type": "module",
   "license": "MIT",
@@ -20,6 +20,7 @@
     "extension",
     "web-search",
     "codex",
+    "pi-codex-web-run",
     "pi-web-access",
     "rpiv-web-tools"
   ],
@@ -48,10 +49,10 @@
     "node": ">=22.19.0"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.84.2"
+    "@earendil-works/pi-coding-agent": ">=0.84.4"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.84.2",
+    "@earendil-works/pi-coding-agent": "^0.85.1",
     "typescript": "^7.0.2"
   }
 }

@@ -5,7 +5,8 @@ const CODEX_WEB_SEARCH_TOOL_NAME = "web_run";
 const CODEX_EXEC_TOOL_NAME = "exec";
 
 const PACKAGE_NAMES = {
-  codex: "@howaboua/pi-codex-conversion",
+  codexConversion: "@howaboua/pi-codex-conversion",
+  codexWebRun: "@howaboua/pi-codex-web-run",
   piWebAccess: "pi-web-access",
   rpivWebTools: "@juicesharp/rpiv-web-tools",
 } as const;
@@ -80,11 +81,13 @@ function hasPackageDirectory(sourceInfo: SourceInfo, packageName: string): boole
 
 function providerFromSource(sourceInfo: SourceInfo): ManagedProvider | undefined {
   const packageName = npmPackageName(sourceInfo.source);
-  if (packageName === PACKAGE_NAMES.codex) return "codex";
+  if (packageName === PACKAGE_NAMES.codexConversion) return "codexConversion";
+  if (packageName === PACKAGE_NAMES.codexWebRun) return "codexWebRun";
   if (packageName === PACKAGE_NAMES.piWebAccess) return "piWebAccess";
   if (packageName === PACKAGE_NAMES.rpivWebTools) return "rpivWebTools";
 
-  if (hasPackageDirectory(sourceInfo, PACKAGE_NAMES.codex)) return "codex";
+  if (hasPackageDirectory(sourceInfo, PACKAGE_NAMES.codexConversion)) return "codexConversion";
+  if (hasPackageDirectory(sourceInfo, PACKAGE_NAMES.codexWebRun)) return "codexWebRun";
   if (hasPackageDirectory(sourceInfo, PACKAGE_NAMES.piWebAccess)) return "piWebAccess";
   if (hasPackageDirectory(sourceInfo, PACKAGE_NAMES.rpivWebTools)) return "rpivWebTools";
   return undefined;
@@ -93,6 +96,7 @@ function providerFromSource(sourceInfo: SourceInfo): ManagedProvider | undefined
 function providerDisplayName(provider: ManagedProvider): string {
   if (provider === "piWebAccess") return PACKAGE_NAMES.piWebAccess;
   if (provider === "rpivWebTools") return "rpiv-web-tools";
+  if (provider === "codexWebRun") return "pi-codex-web-run";
   return "pi-codex-conversion";
 }
 
@@ -100,8 +104,20 @@ function toolProvider(tool: ToolInfo): ManagedProvider | undefined {
   return providerFromSource(tool.sourceInfo);
 }
 
-function isCodexTool(tool: ToolInfo): boolean {
-  return toolProvider(tool) === "codex";
+function isCodexConversionTool(tool: ToolInfo): boolean {
+  return toolProvider(tool) === "codexConversion";
+}
+
+function isCodexWebSearchTool(tool: ToolInfo): boolean {
+  const provider = toolProvider(tool);
+  return tool.name === CODEX_WEB_SEARCH_TOOL_NAME &&
+    (provider === "codexWebRun" || provider === "codexConversion");
+}
+
+function isDirectCodexModel(ctx: ExtensionContext): boolean {
+  const provider = ctx.model?.provider?.trim().toLowerCase();
+  const api = ctx.model?.api?.trim().toLowerCase();
+  return provider === "openai-codex" || api === "openai-codex-responses";
 }
 
 function isExtensionWebSearchTool(tool: ToolInfo): boolean {
@@ -136,25 +152,33 @@ function notifyStatus(ctx: ExtensionContext, result: RouteResult): void {
 }
 
 export default function piWebsearchManager(pi: ExtensionAPI): void {
-  let deferredRouteGeneration = 0;
-
   function routeTools(ctx: ExtensionContext, options: RouteOptions): RouteResult {
     const allTools = pi.getAllTools();
     const activeTools = pi.getActiveTools();
     const activeToolSet = new Set(activeTools);
-    const codexWebSearchTool = allTools.find(
-      (tool) => tool.name === CODEX_WEB_SEARCH_TOOL_NAME && isCodexTool(tool),
-    );
+    const codexWebSearchTool = allTools.find(isCodexWebSearchTool);
     const codexCodeModeActive = allTools.some(
-      (tool) => isCodexTool(tool) && tool.name === CODEX_EXEC_TOOL_NAME && activeToolSet.has(tool.name),
+      (tool) => isCodexConversionTool(tool) && tool.name === CODEX_EXEC_TOOL_NAME && activeToolSet.has(tool.name),
     );
+    const codexStructuredModeActive = allTools.some(
+      (tool) => isCodexConversionTool(tool) &&
+        (tool.name === "exec_command" || tool.name === "write_stdin") &&
+        activeToolSet.has(tool.name),
+    );
+    const legacyBundledWebRunActive = Boolean(
+      codexWebSearchTool &&
+      toolProvider(codexWebSearchTool) === "codexConversion" &&
+      activeToolSet.has(codexWebSearchTool.name),
+    );
+    const codexRuntimeActive = isDirectCodexModel(ctx) || codexCodeModeActive ||
+      codexStructuredModeActive || legacyBundledWebRunActive;
     const extensionWebSearchToolInfos = allTools.filter(isExtensionWebSearchTool);
     const extensionWebSearchTools = extensionWebSearchToolInfos.map((tool) => tool.name);
 
     let target: RouteTarget;
-    if (codexWebSearchTool && codexCodeModeActive) {
+    if (codexWebSearchTool && codexRuntimeActive && codexCodeModeActive) {
       target = "codex-nested-web-run";
-    } else if (codexWebSearchTool && activeToolSet.has(codexWebSearchTool.name)) {
+    } else if (codexWebSearchTool && codexRuntimeActive) {
       target = "codex-web-run";
     } else {
       target = "extension-web-search";
@@ -205,22 +229,16 @@ export default function piWebsearchManager(pi: ExtensionAPI): void {
     return result;
   }
 
-  function scheduleRoute(ctx: ExtensionContext): void {
-    const generation = ++deferredRouteGeneration;
-    setTimeout(() => {
-      if (generation !== deferredRouteGeneration) return;
-      routeTools(ctx, { activatePreferredTools: true });
-    }, 0);
-  }
-
   pi.on("session_start", async (_event, ctx) => {
     routeTools(ctx, { activatePreferredTools: true });
-    scheduleRoute(ctx);
   });
 
   pi.on("model_select", async (_event, ctx) => {
     routeTools(ctx, { activatePreferredTools: true });
-    scheduleRoute(ctx);
+  });
+
+  pi.on("session_shutdown", async (_event, ctx) => {
+    if (ctx.hasUI) ctx.ui.setStatus(STATUS_KEY, undefined);
   });
 
   // Remove conflicts just before a turn, but preserve an explicit /tools choice
